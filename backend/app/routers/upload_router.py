@@ -12,9 +12,7 @@ upload_router.py
 - 이 파일은 업로드 요청과 응답 처리에 집중
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -42,10 +40,7 @@ router = APIRouter(
 )
 def upload_audio(
     meeting_id: int,
-    files: Annotated[
-        list[UploadFile],
-        File(description="업로드할 오디오 파일 목록"),
-    ],
+    files: List[UploadFile] = File(..., description="업로드할 오디오 파일 목록"),
     db: Session = Depends(get_db),
 ) -> SummaryResponse:
     """
@@ -77,22 +72,16 @@ def upload_audio(
 
 @router.post(
     "/image/{meeting_id}",
-    response_model=list[ImageUploadResponse],
+    response_model=List[ImageUploadResponse],
     status_code=status.HTTP_201_CREATED,
     summary="이미지 여러 개 업로드",
 )
 def upload_image(
     meeting_id: int,
-    files: Annotated[
-        list[UploadFile],
-        File(description="업로드할 이미지 파일 목록"),
-    ],
-    image_type: Annotated[
-        str,
-        Form(description="image 또는 whiteboard"),
-    ] = "image",
+    files: List[UploadFile] = File(..., description="업로드할 이미지 파일 목록"),
+    image_type: str = Form("image", description="image 또는 whiteboard"),
     db: Session = Depends(get_db),
-) -> list[ImageUploadResponse]:
+) -> List[ImageUploadResponse]:
     """
     이미지 파일 여러 개를 업로드하고 OCR/분석을 수행한 뒤 결과를 저장합니다.
 
