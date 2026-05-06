@@ -1,4 +1,14 @@
 <resources>
     <string name="app_name">a20260310</string>
     <string name="hello_moa">Hello MOA!</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_meeting">Meeting</string>
+    <string name="nav_result">Result</string>
+    <string name="nav_history">History</string>
+
+    <string name="home_title">MOA 홈</string>
+    <string name="meeting_title">회의 진행</string>
+    <string name="result_title">회의 결과</string>
+    <string name="history_title">기록</string>
 </resources>

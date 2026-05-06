@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/homeFragment">
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.example.a20260310.ui.home.HomeFragment"
+        android:label="@string/nav_home" />
+
+    <fragment
+        android:id="@+id/meetingFragment"
+        android:name="com.example.a20260310.ui.meeting.MeetingFragment"
+        android:label="@string/nav_meeting" />
+
+    <fragment
+        android:id="@+id/resultFragment"
+        android:name="com.example.a20260310.ui.result.ResultFragment"
+        android:label="@string/nav_result" />
+
+    <fragment
+        android:id="@+id/historyFragment"
+        android:name="com.example.a20260310.ui.history.HistoryFragment"
+        android:label="@string/nav_history" />
+
+</navigation>
