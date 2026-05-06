@@ -50,12 +50,15 @@ from schemas.summary_schema import SummaryCreate, SummaryResponse
 
 from services.stt_service import transcribe_audio_file
 from storage.file_manager import save_audio_file
-from utils.preprocess import preprocess_audio_file
 from utils.audio_converter import convert_audio_to_wav
+from utils.preprocess import (
+    preprocess_audio_file,
+    normalize_transcript_text,
+    safe_json_dumps,
+)
 
-# 중요:
-# combined_transcript는 이미 문자열이므로 summarize_meeting()이 아니라
-# summarize_meeting_from_text()를 사용해야 한다.
+# combined_transcript는 이미 문자열이므로
+# summarize_meeting()이 아니라 summarize_meeting_from_text()를 사용한다.
 from ai.meeting_summarizer import summarize_meeting_from_text
 
 
@@ -67,21 +70,17 @@ def _process_single_audio_to_transcript(
     """
     오디오 파일 1개를 처리해서 transcript DB에 저장한다.
 
-    주의
-    ----
-    STT 결과가 빈 문자열이면 TranscriptCreate.content 검증 오류가 발생할 수 있다.
-    따라서 STT 결과가 비어 있으면 DB 저장을 하지 않고 None을 반환한다.
-
     동작 방식
     --------
     1. 파일명 확인
     2. 오디오 파일 저장
-    3. 오디오 전처리
+    3. 오디오 파일 기본 전처리
     4. wav 변환
     5. STT 수행
-    6. STT 결과가 비어 있으면 저장하지 않고 None 반환
-    7. transcript DB 저장
-    8. TranscriptResponse 반환
+    6. STT 결과 텍스트 정규화
+    7. STT 결과가 비어 있으면 저장하지 않고 None 반환
+    8. transcript DB 저장
+    9. TranscriptResponse 반환
     """
 
     # 1. 파일명 확인
@@ -92,14 +91,24 @@ def _process_single_audio_to_transcript(
         )
 
     # 2. 오디오 파일 저장
-    # meeting_id를 함께 넘겨 회의별 폴더에 저장되도록 처리
     saved_path = save_audio_file(
         upload_file=upload_file,
         meeting_id=meeting_id,
     )
 
-    # 3. 오디오 전처리
-    processed_path = preprocess_audio_file(saved_path)
+    # 3. 오디오 파일 기본 전처리
+    #
+    # 현재 preprocess_audio_file()은 파일 존재 여부를 확인하고
+    # 원본 경로를 그대로 반환한다.
+    # wav 변환은 여기서 하지 않고 convert_audio_to_wav()에서 처리한다.
+    try:
+        processed_path = preprocess_audio_file(saved_path)
+
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"오디오 파일을 찾을 수 없습니다: {str(e)}",
+        )
 
     # 4. STT 서버 전송 전 wav 변환
     try:
@@ -133,27 +142,26 @@ def _process_single_audio_to_transcript(
             detail=f"STT 처리 중 오류가 발생했습니다: {str(e)}",
         )
 
-    # 6. STT 결과 정리
+    # 6. STT 결과 텍스트 정규화
     #
-    # STT 서버가 {"text": ""}처럼 빈 결과를 줄 수 있다.
-    # 이 상태로 TranscriptCreate(content="")를 만들면
-    # content 최소 길이 검증에서 오류가 발생한다.
-    transcript_text = (transcript_text or "").strip()
+    # 직접 (transcript_text or "").strip() 하지 않고,
+    # preprocess.py의 normalize_transcript_text()를 사용한다.
+    transcript_text = normalize_transcript_text(transcript_text)
 
+    # 7. STT 결과가 비어 있으면 DB 저장하지 않음
     if not transcript_text:
-        # 빈 STT 결과는 DB에 저장하지 않고 건너뛴다.
         return None
 
-    # 7. transcript 생성 스키마 작성
+    # 8. transcript 생성 스키마 작성
     transcript_data = TranscriptCreate(
         meeting_id=meeting_id,
         content=transcript_text,
     )
 
-    # 8. DB 저장
+    # 9. transcript DB 저장
     transcript = create_transcript(db, transcript_data)
 
-    # 9. 응답 스키마 변환
+    # 10. 응답 스키마 변환
     return TranscriptResponse.model_validate(transcript)
 
 
@@ -173,11 +181,6 @@ def process_uploaded_audio(
     2. 오디오 파일 1개 처리
     3. transcript DB 저장
     4. TranscriptResponse 반환
-
-    주의
-    ----
-    단일 파일 업로드에서 STT 결과가 비어 있으면
-    저장할 transcript가 없으므로 400 에러를 반환한다.
     """
 
     # 1. 회의 존재 여부 확인
@@ -272,8 +275,8 @@ def process_uploaded_audio_files_and_create_summary(
     transcript_texts: list[str] = []
 
     for transcript_response in transcript_responses:
-        # 네 TranscriptResponse 스키마의 필드명이 content라고 가정
-        content = (transcript_response.content or "").strip()
+        # TranscriptResponse 스키마의 필드명이 content라고 가정
+        content = normalize_transcript_text(transcript_response.content)
 
         if content:
             transcript_texts.append(content)
@@ -289,10 +292,6 @@ def process_uploaded_audio_files_and_create_summary(
 
     # 8. LLM 요약 함수 한 번만 호출
     #
-    # 중요:
-    # meeting_summarizer.py 기준으로 combined_transcript는 이미 문자열이므로
-    # summarize_meeting()이 아니라 summarize_meeting_from_text()를 사용한다.
-    #
     # 현재는 오디오만 처리하므로 ocr_text는 빈 문자열로 전달한다.
     # 나중에 OCR 결과까지 합칠 경우 ocr_text에 이미지 OCR 내용을 넣으면 된다.
     try:
@@ -306,18 +305,18 @@ def process_uploaded_audio_files_and_create_summary(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"회의 요약 생성 중 오류가 발생했습니다: {str(e)}",
         )
+
     # 9. SummaryCreate 생성
     #
-    # summary_result 예시:
-    # {
-    #     "summary": "...",
-    #     "decisions": [...],
-    #     "action_items": [...]
-    #}
+    # SummaryCreate.content가 str 타입이므로,
+    # dict 형태인 summary_result를 JSON 문자열로 변환해서 저장한다.
+    #
+    # 직접 json.dumps()를 쓰지 않고,
+    # preprocess.py의 safe_json_dumps()를 사용한다.
     summary_data = SummaryCreate(
         meeting_id=meeting_id,
-        content=summary_result,
-        )   
+        content=safe_json_dumps(summary_result),
+    )
 
     # 10. MeetingSummary 1개 DB 저장
     meeting_summary = create_summary(db, summary_data)
