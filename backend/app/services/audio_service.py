@@ -306,7 +306,6 @@ def process_uploaded_audio_files_and_create_summary(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"회의 요약 생성 중 오류가 발생했습니다: {str(e)}",
         )
-
     # 9. SummaryCreate 생성
     #
     # summary_result 예시:
@@ -314,11 +313,11 @@ def process_uploaded_audio_files_and_create_summary(
     #     "summary": "...",
     #     "decisions": [...],
     #     "action_items": [...]
-    # }
+    #}
     summary_data = SummaryCreate(
         meeting_id=meeting_id,
-        summary=summary_result,
-    )
+        content=summary_result,
+        )   
 
     # 10. MeetingSummary 1개 DB 저장
     meeting_summary = create_summary(db, summary_data)
